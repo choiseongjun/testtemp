@@ -7,6 +7,7 @@ interface CanData {
   speed: number;
   deceleration: number;
   phase: string;
+  input: string;
 }
 
 type AdState = "normal" | "slosh" | "spill";
@@ -78,25 +79,18 @@ export default function Home() {
         const data: CanData = JSON.parse(event.data);
         setCanData(data);
 
-        const decel = data.deceleration;
-
-        if (decel > 8) {
+        if (data.input === "hardbrake" && data.speed > 0) {
           switchTo("spill");
-        } else if (decel > 2) {
+        } else if (data.input === "brake") {
           if (adStateRef.current !== "spill") {
             switchTo("slosh");
           }
+        } else if (data.input === "gas") {
+          switchTo("normal");
         } else {
+          // none (관성) - slosh면 normal로 복귀
           if (adStateRef.current === "slosh") {
             switchTo("normal");
-          }
-          if (data.speed < 1 && adStateRef.current === "spill") {
-            if (!spillTimerRef.current) {
-              spillTimerRef.current = setTimeout(() => {
-                switchTo("normal");
-                spillTimerRef.current = null;
-              }, 3000);
-            }
           }
         }
       };

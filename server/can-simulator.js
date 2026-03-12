@@ -55,6 +55,7 @@ wss.on("connection", (ws) => {
       speed,
       deceleration,
       phase,
+      input,
     };
 
     ws.send(JSON.stringify(canData));
