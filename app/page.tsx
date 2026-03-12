@@ -326,22 +326,97 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 조작법 안내 */}
+      {/* 조작 버튼 */}
       <div
         style={{
           position: "absolute",
-          top: 12,
-          left: 16,
-          fontSize: 13,
-          color: "#aaa",
-          zIndex: 10,
-          lineHeight: 1.6,
-          fontFamily: "'Courier New', monospace",
+          right: 20,
+          bottom: 120,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          zIndex: 20,
+          userSelect: "none",
+          WebkitUserSelect: "none",
         }}
       >
-        <div><kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>W</kbd> / <kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>↑</kbd> 가속</div>
-        <div><kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>S</kbd> 브레이크</div>
-        <div><kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>Space</kbd> / <kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>↓</kbd> 급브레이크</div>
+        <button
+          onMouseDown={() => keysRef.current.add("w")}
+          onMouseUp={() => keysRef.current.delete("w")}
+          onMouseLeave={() => keysRef.current.delete("w")}
+          onTouchStart={(e) => { e.preventDefault(); keysRef.current.add("w"); }}
+          onTouchEnd={() => keysRef.current.delete("w")}
+          onTouchCancel={() => keysRef.current.delete("w")}
+          style={{
+            width: 80,
+            height: 80,
+            borderRadius: "50%",
+            border: "3px solid #00ff88",
+            background: "rgba(0,255,136,0.15)",
+            color: "#00ff88",
+            fontSize: 28,
+            fontWeight: "bold",
+            cursor: "pointer",
+            touchAction: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          GAS
+        </button>
+        <button
+          onMouseDown={() => keysRef.current.add("s")}
+          onMouseUp={() => keysRef.current.delete("s")}
+          onMouseLeave={() => keysRef.current.delete("s")}
+          onTouchStart={(e) => { e.preventDefault(); keysRef.current.add("s"); }}
+          onTouchEnd={() => keysRef.current.delete("s")}
+          onTouchCancel={() => keysRef.current.delete("s")}
+          style={{
+            width: 80,
+            height: 80,
+            borderRadius: "50%",
+            border: "3px solid #ffaa00",
+            background: "rgba(255,170,0,0.15)",
+            color: "#ffaa00",
+            fontSize: 20,
+            fontWeight: "bold",
+            cursor: "pointer",
+            touchAction: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          BRAKE
+        </button>
+        <button
+          onMouseDown={() => keysRef.current.add(" ")}
+          onMouseUp={() => keysRef.current.delete(" ")}
+          onMouseLeave={() => keysRef.current.delete(" ")}
+          onTouchStart={(e) => { e.preventDefault(); keysRef.current.add(" "); }}
+          onTouchEnd={() => keysRef.current.delete(" ")}
+          onTouchCancel={() => keysRef.current.delete(" ")}
+          style={{
+            width: 80,
+            height: 80,
+            borderRadius: "50%",
+            border: "3px solid #ff4444",
+            background: "rgba(255,68,68,0.15)",
+            color: "#ff4444",
+            fontSize: 13,
+            fontWeight: "bold",
+            cursor: "pointer",
+            touchAction: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            lineHeight: 1.2,
+            textAlign: "center",
+          }}
+        >
+          HARD<br/>BRAKE
+        </button>
       </div>
 
       {/* 연결 상태 */}
