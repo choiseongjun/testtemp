@@ -1,65 +1,388 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+interface CanData {
+  timestamp: number;
+  speed: number;
+  deceleration: number;
+  phase: string;
+}
+
+type AdState = "normal" | "slosh" | "spill";
 
 export default function Home() {
+  const normalVideoRef = useRef<HTMLVideoElement>(null);
+  const sloshVideoRef = useRef<HTMLVideoElement>(null);
+  const spillVideoRef = useRef<HTMLVideoElement>(null);
+
+  const [canData, setCanData] = useState<CanData>({
+    timestamp: 0,
+    speed: 0,
+    deceleration: 0,
+    phase: "idle",
+  });
+  const [adState, setAdState] = useState<AdState>("normal");
+  const [connected, setConnected] = useState(false);
+
+  const adStateRef = useRef<AdState>("normal");
+  const spillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function switchTo(state: AdState) {
+    if (adStateRef.current === state) return;
+
+    const prev = adStateRef.current;
+    adStateRef.current = state;
+    setAdState(state);
+
+    // 이전 영상 pause
+    if (prev === "normal") normalVideoRef.current?.pause();
+    if (prev === "slosh") sloshVideoRef.current?.pause();
+    if (prev === "spill") spillVideoRef.current?.pause();
+
+    // 새 영상 play
+    const videoRef =
+      state === "normal"
+        ? normalVideoRef
+        : state === "slosh"
+          ? sloshVideoRef
+          : spillVideoRef;
+
+    if (videoRef.current) {
+      // spill은 항상 처음부터
+      if (state === "spill") videoRef.current.currentTime = 0;
+      videoRef.current.play().catch(() => {});
+    }
+
+    // 복구 타이머 초기화
+    if (spillTimerRef.current) {
+      clearTimeout(spillTimerRef.current);
+      spillTimerRef.current = null;
+    }
+  }
+
+  const wsRef = useRef<WebSocket | null>(null);
+
+  // WebSocket 연결
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    function connect() {
+      ws = new WebSocket("ws://localhost:8080");
+      wsRef.current = ws;
+
+      ws.onopen = () => setConnected(true);
+
+      ws.onmessage = (event) => {
+        const data: CanData = JSON.parse(event.data);
+        setCanData(data);
+
+        const decel = data.deceleration;
+
+        if (decel > 8) {
+          switchTo("spill");
+        } else if (decel > 2) {
+          if (adStateRef.current !== "spill") {
+            switchTo("slosh");
+          }
+        } else {
+          if (adStateRef.current === "slosh") {
+            switchTo("normal");
+          }
+          if (data.speed < 1 && adStateRef.current === "spill") {
+            if (!spillTimerRef.current) {
+              spillTimerRef.current = setTimeout(() => {
+                switchTo("normal");
+                spillTimerRef.current = null;
+              }, 3000);
+            }
+          }
+        }
+      };
+
+      ws.onclose = () => {
+        setConnected(false);
+        wsRef.current = null;
+        reconnectTimer = setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => ws?.close();
+    }
+
+    connect();
+    return () => {
+      ws?.close();
+      clearTimeout(reconnectTimer);
+      if (spillTimerRef.current) clearTimeout(spillTimerRef.current);
+    };
+  }, []);
+
+  // 키보드 컨트롤
+  const keysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    function sendInput() {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      const keys = keysRef.current;
+      if (keys.has(" ") || keys.has("ArrowDown")) {
+        ws.send("hardbrake");
+      } else if (keys.has("s")) {
+        ws.send("brake");
+      } else if (keys.has("ArrowUp") || keys.has("w")) {
+        ws.send("gas");
+      } else {
+        ws.send("none");
+      }
+    }
+
+    const inputInterval = setInterval(sendInput, 50);
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (["ArrowUp", "ArrowDown", " ", "w", "s"].includes(e.key)) {
+        e.preventDefault();
+        keysRef.current.add(e.key);
+      }
+    }
+
+    function onKeyUp(e: KeyboardEvent) {
+      keysRef.current.delete(e.key);
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+
+    return () => {
+      clearInterval(inputInterval);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  // 초기 자동 재생
+  useEffect(() => {
+    normalVideoRef.current?.play().catch(() => {});
+  }, []);
+
+  const videoStyle = (state: AdState) => ({
+    position: "absolute" as const,
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover" as const,
+    opacity: adState === state ? 1 : 0,
+    transition: "opacity 0.4s ease",
+    zIndex: adState === state ? 1 : 0,
+  });
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div
+      style={{
+        position: "relative",
+        width: "100vw",
+        height: "100vh",
+        overflow: "hidden",
+        background: "#000",
+      }}
+    >
+      {/* 정상 광고 영상 */}
+      <video
+        ref={normalVideoRef}
+        src="/coffee-normal.mp4"
+        loop
+        muted
+        playsInline
+        style={videoStyle("normal")}
+      />
+
+      {/* 출렁이는 영상 */}
+      <video
+        ref={sloshVideoRef}
+        src="/coffee-slosh.mp4"
+        loop
+        muted
+        playsInline
+        style={videoStyle("slosh")}
+      />
+
+      {/* 쏟아지는 영상 */}
+      <video
+        ref={spillVideoRef}
+        src="/coffee-spill.mp4"
+        loop
+        muted
+        playsInline
+        style={videoStyle("spill")}
+      />
+
+      {/* 급정거 텍스트 오버레이 */}
+      {adState === "spill" && (
+        <div
+          style={{
+            position: "absolute",
+            top: "10%",
+            left: 0,
+            right: 0,
+            textAlign: "center",
+            zIndex: 10,
+            animation: "shake 0.3s infinite",
+          }}
+        >
+          <h1
+            style={{
+              fontSize: "clamp(32px, 6vw, 72px)",
+              fontWeight: "bold",
+              color: "#ff4444",
+              textShadow:
+                "0 0 20px rgba(255,0,0,0.5), 0 2px 10px rgba(0,0,0,0.8)",
+              fontFamily: "'Arial Black', sans-serif",
+            }}
+          >
+            HOLD YOUR COFFEE!
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      )}
+
+      {/* 하단 HUD */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: "16px 24px",
+          background: "linear-gradient(transparent, rgba(0,0,0,0.8))",
+          zIndex: 10,
+        }}
+      >
+        {/* 감속도 바 */}
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 400,
+            margin: "0 auto 8px",
+            height: 4,
+            background: "#333",
+            borderRadius: 2,
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${Math.min(100, (canData.deceleration / 15) * 100)}%`,
+              background:
+                canData.deceleration > 8
+                  ? "#ff4444"
+                  : canData.deceleration > 2
+                    ? "#ffaa00"
+                    : "#00ff88",
+              borderRadius: 2,
+              transition: "width 0.1s",
+            }}
+          />
         </div>
-      </main>
+
+        <div style={{ textAlign: "center" }}>
+          <span
+            style={{
+              fontSize: "clamp(24px, 4vw, 40px)",
+              fontWeight: "bold",
+              fontFamily: "'Courier New', monospace",
+              color:
+                adState === "spill"
+                  ? "#ff4444"
+                  : adState === "slosh"
+                    ? "#ffaa00"
+                    : "#00ff88",
+            }}
+          >
+            {canData.speed.toFixed(0)} km/h
+          </span>
+          <span
+            style={{
+              display: "block",
+              fontSize: 13,
+              color: "#888",
+              marginTop: 4,
+            }}
+          >
+            {adState === "spill"
+              ? "급정거!"
+              : adState === "slosh"
+                ? "감속 중 - 커피 출렁임"
+                : {
+                    accelerate: "가속 중",
+                    cruise: "정속 주행",
+                    cruise2: "정속 주행",
+                    light_brake: "살짝 브레이크",
+                    recover: "재가속",
+                    sudden_stop: "급정거!",
+                    idle: "정차",
+                  }[canData.phase] || canData.phase}
+          </span>
+        </div>
+      </div>
+
+      {/* 조작법 안내 */}
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          left: 16,
+          fontSize: 13,
+          color: "#aaa",
+          zIndex: 10,
+          lineHeight: 1.6,
+          fontFamily: "'Courier New', monospace",
+        }}
+      >
+        <div><kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>W</kbd> / <kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>↑</kbd> 가속</div>
+        <div><kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>S</kbd> 브레이크</div>
+        <div><kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>Space</kbd> / <kbd style={{ background: "#333", padding: "2px 6px", borderRadius: 3 }}>↓</kbd> 급브레이크</div>
+      </div>
+
+      {/* 연결 상태 */}
+      <div
+        style={{
+          position: "absolute",
+          top: 12,
+          right: 16,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 12,
+          color: connected ? "#00ff88" : "#ff4444",
+          zIndex: 10,
+        }}
+      >
+        <div
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: connected ? "#00ff88" : "#ff4444",
+          }}
+        />
+        {connected ? "CAN Connected" : "Disconnected"}
+      </div>
+
+      <style jsx>{`
+        @keyframes shake {
+          0%,
+          100% {
+            transform: translateX(0);
+          }
+          25% {
+            transform: translateX(-5px) translateY(2px);
+          }
+          75% {
+            transform: translateX(5px) translateY(-2px);
+          }
+        }
+      `}</style>
     </div>
   );
 }
