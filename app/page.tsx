@@ -22,6 +22,7 @@ export default function Home() {
     speed: 0,
     deceleration: 0,
     phase: "idle",
+    input: "none",
   });
   const [adState, setAdState] = useState<AdState>("normal");
   const [connected, setConnected] = useState(false);
