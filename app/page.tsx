@@ -64,9 +64,16 @@ export default function Home() {
   }
 
   const wsRef = useRef<WebSocket | null>(null);
+  const speedRef = useRef(0);
+  const inputRef = useRef<string>("none");
 
-  // WebSocket 연결
+  // WebSocket 연결 (로컬 개발용)
   useEffect(() => {
+    // Vercel 배포 환경에서는 WebSocket 서버가 없으므로 연결 시도하지 않음
+    if (typeof window !== "undefined" && window.location.hostname !== "localhost") {
+      return;
+    }
+
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout>;
 
@@ -89,7 +96,6 @@ export default function Home() {
         } else if (data.input === "gas") {
           switchTo("normal");
         } else {
-          // none (관성) - slosh면 normal로 복귀
           if (adStateRef.current === "slosh") {
             switchTo("normal");
           }
@@ -113,10 +119,80 @@ export default function Home() {
     };
   }, []);
 
+  // 로컬 시뮬레이션 (WebSocket 없을 때)
+  useEffect(() => {
+    if (connected) return;
+
+    const interval = setInterval(() => {
+      const keys = keysRef.current;
+      let currentInput = "none";
+
+      if (keys.has(" ") || keys.has("ArrowDown")) {
+        currentInput = "hardbrake";
+      } else if (keys.has("s")) {
+        currentInput = "brake";
+      } else if (keys.has("ArrowUp") || keys.has("w")) {
+        currentInput = "gas";
+      }
+
+      inputRef.current = currentInput;
+      let speed = speedRef.current;
+
+      // 속도 시뮬레이션
+      if (currentInput === "gas") {
+        speed = Math.min(120, speed + 2);
+      } else if (currentInput === "brake") {
+        speed = Math.max(0, speed - 3);
+      } else if (currentInput === "hardbrake") {
+        speed = Math.max(0, speed - 8);
+      } else {
+        // 관성 감속
+        speed = Math.max(0, speed - 0.5);
+      }
+
+      speedRef.current = speed;
+      const decel =
+        currentInput === "hardbrake" ? 12 :
+        currentInput === "brake" ? 5 : 0;
+
+      const phase =
+        currentInput === "gas" ? "accelerate" :
+        currentInput === "hardbrake" ? "sudden_stop" :
+        currentInput === "brake" ? "light_brake" :
+        speed > 0 ? "cruise" : "idle";
+
+      setCanData({
+        timestamp: Date.now(),
+        speed,
+        deceleration: decel,
+        phase,
+        input: currentInput,
+      });
+
+      // 영상 전환
+      if (currentInput === "hardbrake" && speed > 0) {
+        switchTo("spill");
+      } else if (currentInput === "brake") {
+        if (adStateRef.current !== "spill") {
+          switchTo("slosh");
+        }
+      } else if (currentInput === "gas") {
+        switchTo("normal");
+      } else {
+        if (adStateRef.current === "slosh") {
+          switchTo("normal");
+        }
+      }
+    }, 50);
+
+    return () => clearInterval(interval);
+  }, [connected]);
+
   // 키보드 컨트롤
   const keysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    // WebSocket 연결 시에만 서버로 입력 전송
     function sendInput() {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -424,7 +500,7 @@ export default function Home() {
           alignItems: "center",
           gap: 6,
           fontSize: 12,
-          color: connected ? "#00ff88" : "#ff4444",
+          color: connected ? "#00ff88" : "#aaaaff",
           zIndex: 10,
         }}
       >
@@ -433,10 +509,10 @@ export default function Home() {
             width: 8,
             height: 8,
             borderRadius: "50%",
-            background: connected ? "#00ff88" : "#ff4444",
+            background: connected ? "#00ff88" : "#aaaaff",
           }}
         />
-        {connected ? "CAN Connected" : "Disconnected"}
+        {connected ? "CAN Connected" : "Local Mode"}
       </div>
 
       <style jsx>{`
